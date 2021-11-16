@@ -65,16 +65,6 @@ public class SoundStreamPlugin : FlutterPlugin,
     private var mRecorder: AudioRecord? = null
     private var mListener: OnRecordPositionUpdateListener? = null
 
-    //========= Player's vars
-    private var mAudioTrack: AudioTrack? = null
-    private var mPlayerSampleRate = 16000 // 16Khz
-    private var mPlayerBufferSize = 10240
-    private var mPlayerFormat: AudioFormat = AudioFormat.Builder()
-            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-            .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-            .setSampleRate(mPlayerSampleRate)
-            .build()
-
     /** ======== Basic Plugin initialization ======== **/
 
     override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
@@ -107,10 +97,6 @@ public class SoundStreamPlugin : FlutterPlugin,
                 "initializeRecorder" -> initializeRecorder(call, result)
                 "startRecording" -> startRecording(result)
                 "stopRecording" -> stopRecording(result)
-                "initializePlayer" -> initializePlayer(call, result)
-                "startPlayer" -> startPlayer(result)
-                "stopPlayer" -> stopPlayer(result)
-                "writeChunk" -> writeChunk(call, result)
                 else -> result.notImplemented()
             }
         } catch (e: Exception) {
@@ -295,85 +281,6 @@ public class SoundStreamPlugin : FlutterPlugin,
 
     private fun sendRecorderStatus(status: SoundStreamStatus) {
         sendEventMethod("recorderStatus", status.name)
-    }
-
-    private fun initializePlayer(@NonNull call: MethodCall, @NonNull result: Result) {
-        mPlayerSampleRate = call.argument<Int>("sampleRate") ?: mPlayerSampleRate
-        debugLogging = call.argument<Boolean>("showLogs") ?: false
-        mPlayerFormat = AudioFormat.Builder()
-                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                .setSampleRate(mPlayerSampleRate)
-                .build()
-
-        mPlayerBufferSize = AudioTrack.getMinBufferSize(mPlayerSampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
-
-        if (mAudioTrack?.state == AudioTrack.STATE_INITIALIZED) {
-            mAudioTrack?.release()
-        }
-
-        val audioAttributes = AudioAttributes.Builder()
-                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                .setUsage(AudioAttributes.USAGE_MEDIA)
-                .setFlags(AudioAttributes.FLAG_AUDIBILITY_ENFORCED)
-                .build()
-        mAudioTrack = AudioTrack(audioAttributes, mPlayerFormat, mPlayerBufferSize, AudioTrack.MODE_STREAM, AudioManager.AUDIO_SESSION_ID_GENERATE)
-        result.success(true)
-        sendPlayerStatus(SoundStreamStatus.Initialized)
-    }
-
-    private fun writeChunk(@NonNull call: MethodCall, @NonNull result: Result) {
-        val data = call.argument<ByteArray>("data")
-        if (data != null) {
-            pushPlayerChunk(data, result)
-        } else {
-            result.error(SoundStreamErrors.FailedToWriteBuffer.name, "Failed to write Player buffer", "'data' is null")
-        }
-    }
-
-    private fun pushPlayerChunk(chunk: ByteArray, result: Result) {
-        try {
-            val buffer = ByteBuffer.wrap(chunk)
-            val shortBuffer = ShortBuffer.allocate(chunk.size / 2)
-            shortBuffer.put(buffer.order(ByteOrder.LITTLE_ENDIAN).asShortBuffer())
-            val shortChunk = shortBuffer.array()
-
-            mAudioTrack?.write(shortChunk, 0, shortChunk.size)
-            result.success(true)
-        } catch (e: Exception) {
-            result.error(SoundStreamErrors.FailedToWriteBuffer.name, "Failed to write Player buffer", e.localizedMessage)
-        }
-    }
-
-    private fun startPlayer(result: Result) {
-        try {
-            if (mAudioTrack?.state == AudioTrack.PLAYSTATE_PLAYING) {
-                result.success(true)
-                return
-            }
-
-            mAudioTrack!!.play()
-            sendPlayerStatus(SoundStreamStatus.Playing)
-            result.success(true)
-        } catch (e: Exception) {
-            result.error(SoundStreamErrors.FailedToPlay.name, "Failed to start Player", e.localizedMessage)
-        }
-    }
-
-    private fun stopPlayer(result: Result) {
-        try {
-            if (mAudioTrack?.state == AudioTrack.STATE_INITIALIZED) {
-                mAudioTrack?.stop()
-            }
-            sendPlayerStatus(SoundStreamStatus.Stopped)
-            result.success(true)
-        } catch (e: Exception) {
-            result.error(SoundStreamErrors.FailedToStop.name, "Failed to stop Player", e.localizedMessage)
-        }
-    }
-
-    private fun sendPlayerStatus(status: SoundStreamStatus) {
-        sendEventMethod("playerStatus", status.name)
     }
 
     private fun createRecordListener(): OnRecordPositionUpdateListener? {

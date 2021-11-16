@@ -15,11 +15,9 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   RecorderStream _recorder = RecorderStream();
-  PlayerStream _player = PlayerStream();
 
   List<Uint8List> _micChunks = [];
   bool _isRecording = false;
-  bool _isPlaying = false;
 
   StreamSubscription _recorderStatus;
   StreamSubscription _playerStatus;
@@ -49,35 +47,13 @@ class _MyAppState extends State<MyApp> {
     });
 
     _audioStream = _recorder.audioStream.listen((data) {
-      if (_isPlaying) {
-        _player.writeChunk(data);
-      } else {
         _micChunks.add(data);
-      }
-    });
-
-    _playerStatus = _player.status.listen((status) {
-      if (mounted)
-        setState(() {
-          _isPlaying = status == SoundStreamStatus.Playing;
-        });
+        print(data);
     });
 
     await Future.wait([
       _recorder.initialize(),
-      _player.initialize(),
     ]);
-  }
-
-  void _play() async {
-    await _player.start();
-
-    if (_micChunks.isNotEmpty) {
-      for (var chunk in _micChunks) {
-        await _player.writeChunk(chunk);
-      }
-      _micChunks.clear();
-    }
   }
 
   @override
@@ -94,11 +70,6 @@ class _MyAppState extends State<MyApp> {
               iconSize: 96.0,
               icon: Icon(_isRecording ? Icons.mic_off : Icons.mic),
               onPressed: _isRecording ? _recorder.stop : _recorder.start,
-            ),
-            IconButton(
-              iconSize: 96.0,
-              icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow),
-              onPressed: _isPlaying ? _player.stop : _play,
             ),
           ],
         ),

@@ -34,15 +34,6 @@ public class SwiftSoundStreamPlugin: NSObject, FlutterPlugin {
     private var mRecordSettings: [String:Int]!
     private var mRecordFormat: AVAudioFormat!
     
-    //========= Player's vars
-    private let PLAYER_OUTPUT_SAMPLE_RATE: Double = 32000   // 32Khz
-    private let mPlayerBus = 0
-    private let mPlayerNode = AVAudioPlayerNode()
-    private var mPlayerSampleRate: Double = 16000 // 16Khz
-    private var mPlayerBufferSize: AVAudioFrameCount = 8192
-    private var mPlayerOutputFormat: AVAudioFormat!
-    private var mPlayerInputFormat: AVAudioFormat!
-    
     /** ======== Basic Plugin initialization ======== **/
     
     public static func register(with registrar: FlutterPluginRegistrar) {
@@ -57,7 +48,6 @@ public class SwiftSoundStreamPlugin: NSObject, FlutterPlugin {
         self.mInputNode = mAudioEngine.inputNode
         
         super.init()
-        self.attachPlayer()
         mAudioEngine.prepare()
     }
     
@@ -71,14 +61,6 @@ public class SwiftSoundStreamPlugin: NSObject, FlutterPlugin {
             startRecording(result)
         case "stopRecording":
             stopRecording(result)
-        case "initializePlayer":
-            initializePlayer(call, result)
-        case "startPlayer":
-            startPlayer(result)
-        case "stopPlayer":
-            stopPlayer(result)
-        case "writeChunk":
-            writeChunk(call, result)
         default:
             print("Unrecognized method: \(call.method)")
             sendResult(result, FlutterMethodNotImplemented)
@@ -240,71 +222,6 @@ public class SwiftSoundStreamPlugin: NSObject, FlutterPlugin {
         sendEventMethod("recorderStatus", status.rawValue)
     }
     
-    private func initializePlayer(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
-        guard let argsArr = call.arguments as? Dictionary<String,AnyObject>
-            else {
-                sendResult(result, FlutterError( code: SoundStreamErrors.Unknown.rawValue,
-                                                 message:"Incorrect parameters",
-                                                 details: nil ))
-                return
-        }
-        mPlayerSampleRate = argsArr["sampleRate"] as? Double ?? mPlayerSampleRate
-        debugLogging = argsArr["showLogs"] as? Bool ?? debugLogging
-        mPlayerInputFormat = AVAudioFormat(commonFormat: AVAudioCommonFormat.pcmFormatInt16, sampleRate: mPlayerSampleRate, channels: 1, interleaved: true)
-        sendPlayerStatus(SoundStreamStatus.Initialized)
-    }
-    
-    private func attachPlayer() {
-        mPlayerOutputFormat = AVAudioFormat(commonFormat: AVAudioCommonFormat.pcmFormatFloat32, sampleRate: PLAYER_OUTPUT_SAMPLE_RATE, channels: 1, interleaved: true)
-        
-        mAudioEngine.attach(mPlayerNode)
-        mAudioEngine.connect(mPlayerNode, to: mAudioEngine.outputNode, format: mPlayerOutputFormat)
-    }
-    
-    private func startPlayer(_ result: @escaping FlutterResult) {
-        startEngine()
-        if !mPlayerNode.isPlaying {
-            mPlayerNode.play()
-        }
-        sendPlayerStatus(SoundStreamStatus.Playing)
-        result(true)
-    }
-    
-    private func stopPlayer(_ result: @escaping FlutterResult) {
-        if mPlayerNode.isPlaying {
-            mPlayerNode.stop()
-        }
-        sendPlayerStatus(SoundStreamStatus.Stopped)
-        result(true)
-    }
-    
-    private func sendPlayerStatus(_ status: SoundStreamStatus) {
-        sendEventMethod("playerStatus", status.rawValue)
-    }
-    
-    private func writeChunk(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
-        guard let argsArr = call.arguments as? Dictionary<String,AnyObject>,
-            let data = argsArr["data"] as? FlutterStandardTypedData
-            else {
-                sendResult(result, FlutterError( code: SoundStreamErrors.FailedToWriteBuffer.rawValue,
-                                                 message:"Failed to write Player buffer",
-                                                 details: nil ))
-                return
-        }
-        let byteData = [UInt8](data.data)
-        pushPlayerChunk(byteData, result)
-    }
-    
-    private func pushPlayerChunk(_ chunk: [UInt8], _ result: @escaping FlutterResult) {
-        let buffer = bytesToAudioBuffer(chunk)
-        mPlayerNode.scheduleBuffer(convertBufferFormat(
-            buffer,
-            from: mPlayerInputFormat,
-            to: mPlayerOutputFormat
-        ));
-        result(true)
-    }
-    
     private func convertBufferFormat(_ buffer: AVAudioPCMBuffer, from: AVAudioFormat, to: AVAudioFormat) -> AVAudioPCMBuffer {
         
         let formatConverter =  AVAudioConverter(from: from, to: to)
@@ -336,22 +253,6 @@ public class SwiftSoundStreamPlugin: NSObject, FlutterPlugin {
         }
         
         return audioByteArray
-    }
-    
-    private func bytesToAudioBuffer(_ buf: [UInt8]) -> AVAudioPCMBuffer {
-        let frameLength = UInt32(buf.count) / mPlayerInputFormat.streamDescription.pointee.mBytesPerFrame
-        
-        let audioBuffer = AVAudioPCMBuffer(pcmFormat: mPlayerInputFormat, frameCapacity: frameLength)!
-        audioBuffer.frameLength = frameLength
-        
-        let dstLeft = audioBuffer.int16ChannelData![0]
-        
-        buf.withUnsafeBufferPointer {
-            let src = UnsafeRawPointer($0.baseAddress!).bindMemory(to: Int16.self, capacity: Int(frameLength))
-            dstLeft.initialize(from: src, count: Int(frameLength))
-        }
-        
-        return audioBuffer
     }
 
 }
